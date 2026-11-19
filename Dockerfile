@@ -1,5 +1,6 @@
 # Stage 1: Build the Rust binary
 FROM rust:alpine3.24 AS builder
+# hadolint ignore=DL3018
 RUN apk add --no-cache musl-dev sqlite-dev pkgconfig
 WORKDIR /build
 
@@ -13,6 +14,7 @@ RUN touch src/main.rs && cargo build --release
 
 # Stage 2: Minimal runtime image
 FROM alpine:3.24
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates sqlite-libs && \
     adduser -D -u 1000 appuser && \
     mkdir -p /app/storage && \
