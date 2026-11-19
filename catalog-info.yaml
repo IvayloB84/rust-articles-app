@@ -1,12 +1,12 @@
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: rust-app-deployment
+  name: rust-articles-app
   description: Rust (axum + sqlx) articles microservice with SQLite WAL persistence
   annotations:
     github.com/project-slug: IvayloB84/rust-articles-app
     argocd/app-name: rust-articles-app
-    backstage.io/kubernetes-label-selector: "app=rust-web"
+    backstage.io/kubernetes-label-selector: "app=rust-articles-app"
 spec:
   type: service
   lifecycle: production
