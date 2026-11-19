@@ -1,10 +1,10 @@
 use axum::{
+    Router,
     extract::State,
     response::{Html, IntoResponse},
     routing::get,
-    Router,
 };
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use std::{net::SocketAddr, str::FromStr};
 
 #[derive(Clone)]
@@ -43,11 +43,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/articles", get(list_articles))
         .route("/health", get(|| async { "OK" }));
 
-    let app = Router::new()
-        .nest("/rust", rust_routes)
-        .with_state(state);
+    let app = Router::new().nest("/rust", rust_routes).with_state(state);
 
-    let addr = SocketAddr::from((, 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
