@@ -1,16 +1,14 @@
 image:
-  repository: docker.io/ivaylob84/rails-gallery
+  repository: ghcr.io/ivaylob84/rust-articles-app
   tag: latest
   pullPolicy: Always
 
-rails:
-  env: production
-  serveStaticFiles: "true"
-  logToStdout: "true"
+rust:
+  logLevel: info
 
 storage:
   className: local-path
-  size: 10Gi
+  size: 2Gi
 
 ingress:
   className: traefik

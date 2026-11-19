@@ -1,23 +1,26 @@
-FROM ruby:3.3-alpine
+# Stage 1: Build the Rust binary
+FROM rust:alpine3.24 AS builder
+RUN apk add --no-cache musl-dev sqlite-dev pkgconfig
+WORKDIR /build
 
-# 1. FIXED: Added libc6-compat to allow the standalone tailwind binary to execute on Alpine Linux
-RUN apk add --no-cache build-base sqlite-dev tzdata nodejs gcompat libc6-compat vips-dev imagemagick
+# Cache dependencies first
+COPY Cargo.toml Cargo.lock* ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
 
-# 2. Configure project directory workspace
+# Build actual application
+COPY src ./src
+RUN touch src/main.rs && cargo build --release
+
+# Stage 2: Minimal runtime image
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates sqlite-libs && \
+    adduser -D -u 1000 appuser && \
+    mkdir -p /app/storage && \
+    chown -R 1000:1000 /app
+
 WORKDIR /app
+COPY --from=builder /build/target/release/rust-articles-app /app/server
 
-# 3. Cache and install application gems
-COPY Gemfile Gemfile.lock ./
-RUN bundle config set --local deployment 'true' \
-    && bundle config set --local without 'development test' \
-    && bundle install
-
-# 4. Copy your actual Ruby on Rails source code files
-COPY . .
-
-# 5. FIXED: Use the official Rails 8 dummy compilation variable to allow database-less asset builds
-ENV RAILS_ENV=production
-RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile
-
+USER 1000:1000
 EXPOSE 3000
-CMD ["bundle", "exec", "puma", "-C", "config/puma.rb"]
+CMD ["/app/server"]

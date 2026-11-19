@@ -8,10 +8,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: local-path
+  storageClassName: "local-path"
   resources:
     requests:
-      storage: 10Gi
+      storage: "2Gi"
 
 ---
 # Source: rails-gallery/templates/service.yaml
@@ -51,28 +51,14 @@ spec:
         app: rails-web
     spec:
       containers:
-      - name: rails-container
-        image: "docker.io/ivaylob84/rails-gallery:latest"
+      - name: rust-container
+        image: "ghcr.io/ivaylob84/rust-articles-app:latest"
         imagePullPolicy: Always
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            bin/rails db:migrate;
-            bundle exec rails server -b 0.0.0.0 -p 3000
         env:
-        - name: RAILS_ENV
-          value: "production"
-        - name: RAILS_SERVE_STATIC_FILES
-          value: "true"
-        - name: RAILS_LOG_TO_STDOUT
-          value: "true"
+        - name: RUST_LOG
+          value: "info"
         - name: DATABASE_URL
-          value: "sqlite3:/app/storage/production.sqlite3"
-        - name: SECRET_KEY_BASE
-          valueFrom:
-            secretKeyRef:
-              key: SECRET_KEY_BASE
-              name: rails-production-secrets
+          value: "sqlite:///app/storage/production.sqlite3?mode=rwc"
         ports:
         - containerPort: 3000
           protocol: TCP
@@ -82,7 +68,7 @@ spec:
             path: /rails/articles
             port: 3000
             scheme: HTTP
-          initialDelaySeconds: 10
+          initialDelaySeconds: 2
           periodSeconds: 5
           successThreshold: 1
           timeoutSeconds: 1
@@ -91,8 +77,8 @@ spec:
           name: sqlite-storage
       initContainers:
       - name: volume-permissions-fix
-        image: alpine:latest
-        imagePullPolicy: Always
+        image: alpine:3.24
+        imagePullPolicy: IfNotPresent
         command: ["sh", "-c", "chown -R 1000:1000 /app/storage && chmod -R 775 /app/storage"]
         volumeMounts:
         - mountPath: /app/storage
@@ -101,8 +87,6 @@ spec:
       - name: sqlite-storage
         persistentVolumeClaim:
           claimName: rails-sqlite-pvc
-
-
 ---
 # Source: rails-gallery/templates/ingress.yaml
 apiVersion: networking.k8s.io/v1
