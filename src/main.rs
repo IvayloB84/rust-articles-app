@@ -1,11 +1,10 @@
 use axum::{
-    Router,
     extract::State,
     response::{Html, IntoResponse},
     routing::get,
+    Router,
 };
-use metrics_exporter_prometheus::PrometheusBuilder;
-use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use std::{net::SocketAddr, str::FromStr};
 
 #[derive(Clone)]
@@ -15,10 +14,7 @@ struct AppState {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Initialize Prometheus /metrics recorder
-    let prom_handle = PrometheusBuilder::new().install_recorder()?;
-
-    // 2. Connect to SQLite on your 10Gi PVC with WAL & mmap pragmas
+    // Connect to SQLite on your 2Gi PVC with WAL & mmap pragmas
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "sqlite:///app/storage/production.sqlite3?mode=rwc".into());
 
@@ -30,7 +26,6 @@ async fn main() -> anyhow::Result<()> {
 
     let db = SqlitePool::connect_with(opts).await?;
 
-    // Create table automatically if missing
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS articles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,17 +38,16 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { db };
 
-    // 3. Match your existing /rails Traefik path & readiness probe (/rails/articles)
+    // Match your /rust Traefik path & readiness probe (/rust/articles)
     let rust_routes = Router::new()
         .route("/articles", get(list_articles))
         .route("/health", get(|| async { "OK" }));
 
     let app = Router::new()
         .nest("/rust", rust_routes)
-        .route("/metrics", get(move || async move { prom_handle.render() }))
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from((, 3000));
     println!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
