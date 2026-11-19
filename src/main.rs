@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     .execute(&db)
     .await?;
 
-    let state = AppState { db };
+    let state = AppState { db: db.clone() };
 
     let rust_routes = Router::new()
         .route("/articles", get(list_articles).post(create_article))
@@ -61,9 +61,39 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    // Checkpoint and close SQLite WAL cleanly on SIGTERM
+    db.close().await;
+    println!("SQLite pool closed cleanly.");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    println!("Shutdown signal received...");
 }
 
 async fn list_articles(State(state): State<AppState>) -> impl IntoResponse {
@@ -143,8 +173,8 @@ async fn list_articles(State(state): State<AppState>) -> impl IntoResponse {
 </head>
 <body>
   <header>
-    <h1>🦀 Rust Articles Engine</h1>
-    <span class="pill">SQLite WAL • {} Posts</span>
+    <h1>Rust Articles Engine</h1>
+    <span class="pill">SQLite WAL &bull; {} Posts</span>
   </header>
   <form method="post" action="/rust/articles" class="composer">
     <input name="title" placeholder="Article title..." required>
