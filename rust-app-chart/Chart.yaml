@@ -1,5 +1,5 @@
 apiVersion: v2
-name: rails-gallery
+name: rust-gallery
 description: A production-grade Helm chart for the Rails 8 Articles application
 type: application
 version: 1.0.0

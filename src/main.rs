@@ -44,12 +44,12 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState { db };
 
     // 3. Match your existing /rails Traefik path & readiness probe (/rails/articles)
-    let rails_routes = Router::new()
+    let rust_routes = Router::new()
         .route("/articles", get(list_articles))
         .route("/health", get(|| async { "OK" }));
 
     let app = Router::new()
-        .nest("/rails", rails_routes)
+        .nest("/rust", rust_routes)
         .route("/metrics", get(move || async move { prom_handle.render() }))
         .with_state(state);
 
