@@ -49,15 +49,7 @@ async fn main() -> anyhow::Result<()> {
     .execute(&db)
     .await?;
 
-    let state = AppState { db: db.clone() };
-
-    let rust_routes = Router::new()
-        .route("/articles", get(list_articles).post(create_article))
-        .route("/api/articles", get(list_articles_json))
-        .route("/articles/{id}/delete", post(delete_article))
-        .route("/health", get(|| async { "OK" }));
-
-    let app = Router::new().nest("/rust", rust_routes).with_state(state);
+    let app = build_router(db.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("Listening on {}", addr);
@@ -231,4 +223,94 @@ fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn build_router(db: SqlitePool) -> Router {
+    let state = AppState { db };
+
+    let rust_routes = Router::new()
+        .route("/articles", get(list_articles).post(create_article))
+        .route("/api/articles", get(list_articles_json))
+        .route("/articles/{id}/delete", post(delete_article))
+        .route("/health", get(|| async { "OK" }));
+
+    Router::new().nest("/rust", rust_routes).with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode, header},
+    };
+    use http_body_util::BodyExt;
+    use tower::ServiceExt; // provides `.oneshot(...)`
+
+    async fn setup_test_app() -> Router {
+        let db = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL
+            )",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+
+        build_router(db)
+    }
+
+    #[tokio::test]
+    async fn test_health_endpoint() {
+        let app = setup_test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/rust/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&body[..], b"OK");
+    }
+
+    #[tokio::test]
+    async fn test_create_and_fetch_json_articles() {
+        let app = setup_test_app().await;
+
+        // 1. Submit a POST form to create an article
+        let create_req = Request::builder()
+            .method("POST")
+            .uri("/rust/articles")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from("title=CI+Test+Post&body=Verified+in+memory"))
+            .unwrap();
+
+        let create_res = app.clone().oneshot(create_req).await.unwrap();
+        assert_eq!(create_res.status(), StatusCode::SEE_OTHER);
+
+        // 2. Fetch the JSON API endpoint and verify the created article is returned
+        let api_req = Request::builder()
+            .uri("/rust/api/articles")
+            .body(Body::empty())
+            .unwrap();
+
+        let api_res = app.oneshot(api_req).await.unwrap();
+        assert_eq!(api_res.status(), StatusCode::OK);
+
+        let body = api_res.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json.as_array().unwrap().len(), 1);
+        assert_eq!(json[0]["title"], "CI Test Post");
+        assert_eq!(json[0]["body"], "Verified in memory");
+    }
 }
