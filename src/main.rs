@@ -1,10 +1,10 @@
 use axum::{
-    Router,
+    Json, Router,
     extract::{Form, Path, State},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool, sqlite::SqliteConnectOptions};
 use std::{net::SocketAddr, str::FromStr};
 
@@ -13,7 +13,7 @@ struct AppState {
     db: SqlitePool,
 }
 
-#[derive(FromRow)]
+#[derive(FromRow, Serialize)]
 struct Article {
     id: i64,
     title: String,
@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
 
     let rust_routes = Router::new()
         .route("/articles", get(list_articles).post(create_article))
+        .route("/api/articles", get(list_articles_json))
         .route("/articles/{id}/delete", post(delete_article))
         .route("/health", get(|| async { "OK" }));
 
@@ -189,24 +190,39 @@ async fn list_articles(State(state): State<AppState>) -> impl IntoResponse {
     ))
 }
 
+async fn list_articles_json(State(state): State<AppState>) -> Json<Vec<Article>> {
+    let articles = sqlx::query_as("SELECT id, title, body FROM articles ORDER BY id DESC")
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    Json(articles)
+}
+
 async fn create_article(
     State(state): State<AppState>,
     Form(input): Form<CreateArticle>,
 ) -> impl IntoResponse {
-    let _ = sqlx::query("INSERT INTO articles (title, body) VALUES (?, ?)")
+    if let Err(err) = sqlx::query("INSERT INTO articles (title, body) VALUES (?, ?)")
         .bind(input.title.trim())
         .bind(input.body.trim())
         .execute(&state.db)
-        .await;
+        .await
+    {
+        eprintln!("Failed to insert article: {err}");
+    }
 
     Redirect::to("/rust/articles")
 }
 
 async fn delete_article(State(state): State<AppState>, Path(id): Path<i64>) -> impl IntoResponse {
-    let _ = sqlx::query("DELETE FROM articles WHERE id = ?")
+    if let Err(err) = sqlx::query("DELETE FROM articles WHERE id = ?")
         .bind(id)
         .execute(&state.db)
-        .await;
+        .await
+    {
+        eprintln!("Failed to delete article {id}: {err}");
+    }
 
     Redirect::to("/rust/articles")
 }
@@ -216,3 +232,4 @@ fn escape_html(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
+
